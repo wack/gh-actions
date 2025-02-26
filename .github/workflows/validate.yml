@@ -1,0 +1,71 @@
+# This workflow validates a Rust program.
+# It expects that the repo uses `Cargo Make`,
+# and `cargo make ci-flow` is the command to
+# run to validate the build.
+name: "Validate Build"
+
+on:
+  workflow_call:
+    inputs:
+      codecov-enabled:
+        description: "Whether Codecov has been enabled for this repository."
+        required: false
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # This job installs Cargo Make and Cargo Nextest before running
+  # the CI workflow using Cargo Make. Most of the time, it should
+  # restore Cargo Make and other dependencies from cache.
+  build:
+    name: Validate Rust Build
+    runs-on: ubuntu-22.04
+    steps:
+      # Checks out the repo that called this workflow, not
+      # the repo that this workflow is defined in.
+      - name: Checkout the Repo
+        uses: actions/checkout@v4
+
+      # We tend to use stable Rust across Wack.
+      - name: "Install Rust (Stable)"
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview,rustfmt,clippy
+     
+      # Restore the cache.
+      - name: "Restore Rust Cache"
+        uses: Swatinem/rust-cache@v2
+
+      # Installing from binaries tends to be faster than installing
+      # with Cargo from source.
+      - name: "Install Cargo Tools from Binaries."
+        uses: "taiki-e/install-action@v2"
+        with:
+          tool: "cargo-tarpaulin,cargo-make,cargo-nextest,cargo-llvm-cov"
+
+      # We use Cargo-sort in most of our CI jobs, but it's not available
+      # to be installed from a binary.
+      - name: "Install Cargo Sort"
+        uses: taiki-e/cache-cargo-install-action@v1
+        with:
+          tool: cargo-sort
+
+      # Honestly, I'm not even sure we use this?
+      - name: "Install Taplo CLI"
+        uses: taiki-e/cache-cargo-install-action@v1
+        with:
+          tool: taplo-cli
+      
+      # This is the actual "validation" step.
+      - name: "Cargo Make"
+        run: cargo make ci-flow
+
+      # Upload the coverage profile if possible.
+      - name: "Upload Coverage"
+        uses: coverallsapp/github-action@v2
+        if: ${{ inputs.codecov-enabled }}
+        with:
+          git-branch: "${{ github.base_ref || github.event.merge_group.base_ref }}"	
