@@ -42,8 +42,11 @@ jobs:
         uses: actions/checkout@v4
 
       # Setup Rust and install our most commonly used tools.
+      # This call references the action at ./lib/setup-rust, but
+      # because its run from the context of the caller, we have to use
+      # the fully-qualified path.
       - name: "Setup Rust"
-        uses: "./.github/workflows/lib/setup-rust"
+        uses: "wack/gh-actions/.github/workflows/lib/setup-rust@trunk"
       
       # This is the actual "validation" step.
       - name: "Cargo Make"
