@@ -29,3 +29,5 @@ jobs:
     secrets:
       codecov_access_token: ${{ secrets.token }}
 ```
+
+You can also upload artifacts generated as part of your workflow.
