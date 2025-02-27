@@ -1,0 +1,30 @@
+name: '⚡Setup Rust'
+author: "Robbie McKinstry<robbie@wack.run>"
+description: "Install Rust and Related Tools"
+runs:
+  using: "composite"
+  steps:
+
+    # We tend to use stable Rust across Wack.
+    - name: "Install Rust (Stable)"
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: "rustfmt,clippy,llvm-tools-preview"
+    
+    # Restore the cache.
+    - name: "Restore Rust Cache"
+      uses: Swatinem/rust-cache@v2
+       
+    # Installing from binaries tends to be faster than installing
+    # with Cargo from source.
+    - name: "Install Cargo Tools from Binaries."
+      uses: "taiki-e/install-action@v2"
+      with:
+        tool: "cargo-tarpaulin,cargo-make,cargo-nextest,cargo-llvm-cov,cargo-sort,sqlx-cli"
+
+    # Honestly, I'm not even sure we use this?
+    # It should be used for formatting TOML files.
+    - name: "Install Taplo CLI"
+      uses: taiki-e/cache-cargo-install-action@v1
+      with:
+        tool: taplo-cli

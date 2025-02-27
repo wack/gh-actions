@@ -41,35 +41,9 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@v4
 
-      # We tend to use stable Rust across Wack.
-      - name: "Install Rust (Stable)"
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview,rustfmt,clippy
-     
-      # Restore the cache.
-      - name: "Restore Rust Cache"
-        uses: Swatinem/rust-cache@v2
-
-      # Installing from binaries tends to be faster than installing
-      # with Cargo from source.
-      - name: "Install Cargo Tools from Binaries."
-        uses: "taiki-e/install-action@v2"
-        with:
-          tool: "cargo-tarpaulin,cargo-make,cargo-nextest,cargo-llvm-cov"
-
-      # We use Cargo-sort in most of our CI jobs, but it's not available
-      # to be installed from a binary.
-      - name: "Install Cargo Sort"
-        uses: taiki-e/cache-cargo-install-action@v1
-        with:
-          tool: cargo-sort
-
-      # Honestly, I'm not even sure we use this?
-      - name: "Install Taplo CLI"
-        uses: taiki-e/cache-cargo-install-action@v1
-        with:
-          tool: taplo-cli
+      # Setup Rust and install our most commonly used tools.
+      - name: "Setup Rust"
+        uses: "./.github/workflows/lib/setup-rust"
       
       # This is the actual "validation" step.
       - name: "Cargo Make"
