@@ -4,7 +4,6 @@ description: "Install Rust and Related Tools"
 runs:
   using: "composite"
   steps:
-
     # We tend to use stable Rust across Wack.
     - name: "Install Rust (Stable)"
       uses: dtolnay/rust-toolchain@stable
@@ -13,7 +12,7 @@ runs:
     
     # Restore the cache.
     - name: "Restore Rust Cache"
-      uses: Swatinem/rust-cache@v2
+      uses: "Swatinem/rust-cache@v2"
        
     # Installing from binaries tends to be faster than installing
     # with Cargo from source.
@@ -25,6 +24,6 @@ runs:
     # Honestly, I'm not even sure we use this?
     # It should be used for formatting TOML files.
     - name: "Install Taplo CLI"
-      uses: taiki-e/cache-cargo-install-action@v1
+      uses: "taiki-e/cache-cargo-install-action@v1"
       with:
-        tool: taplo-cli
+        tool: "taplo-cli"
