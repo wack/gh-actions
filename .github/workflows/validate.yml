@@ -46,7 +46,7 @@ jobs:
       # because its run from the context of the caller, we have to use
       # the fully-qualified path.
       - name: "Setup Rust"
-        uses: "wack/gh-actions/.github/workflows/lib/setup-rust@trunk"
+        uses: "wack/gh-actions/setup-rust@trunk"
       
       # This is the actual "validation" step.
       - name: "Cargo Make"
