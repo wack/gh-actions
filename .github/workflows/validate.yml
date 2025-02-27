@@ -72,6 +72,7 @@ jobs:
       # is useful for other repos that want to consume the artifact
       # because it lets them verify where the artifact came from.
       - name: Generate artifact attestation
+        if: ${{ inputs.artifact-name }}
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: ${{ inputs.artifact-path }}
