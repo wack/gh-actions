@@ -41,6 +41,10 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@v4
 
+      - name: Give permission to restore kcov to dierctories.
+        run: sudo chown root /bin/tar && sudo chmod u+s /bin/tar
+        # sudo -u $(whoami) mkdir -p /usr/local/share/doc/kcov
+      
       - name: Restore KCov from Cache
         id: cache-kcov-restore
         uses: actions/cache/restore@v4
