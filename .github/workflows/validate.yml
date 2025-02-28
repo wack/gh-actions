@@ -41,6 +41,19 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@v4
 
+      - name: Restore KCov from Cache
+        id: cache-kcov-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            /usr/local/share/doc/kcov/ChangeLog
+            /usr/local/share/doc/kcov/COPYING
+            /usr/local/share/doc/kcov/COPYING.externals
+            /usr/local/bin/kcov
+            /usr/local/bin/kcov-system-daemon
+            /usr/local/share/man/man1/kcov.1
+          key: ${{ runner.os }}-kcov
+
       # Setup Rust and install our most commonly used tools.
       # This call references the action at ./lib/setup-rust, but
       # because its run from the context of the caller, we have to use
@@ -76,3 +89,16 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: ${{ inputs.artifact-path }}
+
+      - name: Save KCov
+        id: cache-kcov-save
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            /usr/local/share/doc/kcov/ChangeLog
+            /usr/local/share/doc/kcov/COPYING
+            /usr/local/share/doc/kcov/COPYING.externals
+            /usr/local/bin/kcov
+            /usr/local/bin/kcov-system-daemon
+            /usr/local/share/man/man1/kcov.1
+          key: ${{ steps.cache-kcov-restore.outputs.cache-primary-key }}
