@@ -19,11 +19,11 @@ runs:
     - name: "Install Cargo Tools from Binaries."
       uses: "taiki-e/install-action@v2"
       with:
-        tool: "cargo-tarpaulin,cargo-make,cargo-nextest,cargo-llvm-cov,cargo-sort,sqlx-cli"
+        tool: "cargo-make,cargo-nextest"
 
     # Honestly, I'm not even sure we use this?
     # It should be used for formatting TOML files.
-    - name: "Install Taplo CLI"
-      uses: "taiki-e/cache-cargo-install-action@v1"
-      with:
-        tool: "taplo-cli"
+    # - name: "Install Taplo CLI"
+    #   uses: "taiki-e/cache-cargo-install-action@v1"
+    #   with:
+    #     tool: "taplo-cli"
