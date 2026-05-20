@@ -7,7 +7,7 @@ inputs:
     required: false
     default: ""
   extra-tools:
-    description: "Comma-separated list of additional tools to install via taiki-e/install-action (e.g. cargo-llvm-cov)."
+    description: "Comma-separated list of additional tools to install via taiki-e/install-action (e.g. cargo-nextest, cargo-llvm-cov). cargo-make is always installed."
     required: false
     default: ""
 runs:
@@ -27,8 +27,10 @@ runs:
         shared-key: ${{ inputs.shared-key }}
 
     # Installing from binaries tends to be faster than installing
-    # with Cargo from source.
+    # with Cargo from source. cargo-make is always installed because
+    # nearly every Wack Rust repo uses it; nextest and other tools are
+    # opt-in via `extra-tools` so jobs that don't need them save install time.
     - name: "Install Cargo Tools from Binaries."
       uses: "taiki-e/install-action@v2"
       with:
-        tool: ${{ inputs.extra-tools != '' && format('cargo-make,cargo-nextest,{0}', inputs.extra-tools) || 'cargo-make,cargo-nextest' }}
+        tool: ${{ inputs.extra-tools != '' && format('cargo-make,{0}', inputs.extra-tools) || 'cargo-make' }}
