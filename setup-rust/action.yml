@@ -1,6 +1,15 @@
 name: '⚡Setup Rust'
 author: "Robbie McKinstry<robbie@wack.run>"
 description: "Install Rust and Related Tools"
+inputs:
+  shared-key:
+    description: "Cache key suffix shared across jobs that should reuse each other's Rust build artifacts. Leave empty for per-job cache (default Swatinem behavior)."
+    required: false
+    default: ""
+  extra-tools:
+    description: "Comma-separated list of additional tools to install via taiki-e/install-action (e.g. cargo-llvm-cov)."
+    required: false
+    default: ""
 runs:
   using: "composite"
   steps:
@@ -9,21 +18,17 @@ runs:
       uses: dtolnay/rust-toolchain@stable
       with:
         components: "rustfmt,clippy,llvm-tools-preview"
-    
-    # Restore the cache.
+
+    # Restore the cache. A shared-key lets sibling jobs reuse artifacts;
+    # without one, each job gets its own cache namespace.
     - name: "Restore Rust Cache"
       uses: "Swatinem/rust-cache@v2"
-       
+      with:
+        shared-key: ${{ inputs.shared-key }}
+
     # Installing from binaries tends to be faster than installing
     # with Cargo from source.
     - name: "Install Cargo Tools from Binaries."
       uses: "taiki-e/install-action@v2"
       with:
-        tool: "cargo-make,cargo-nextest"
-
-    # Honestly, I'm not even sure we use this?
-    # It should be used for formatting TOML files.
-    # - name: "Install Taplo CLI"
-    #   uses: "taiki-e/cache-cargo-install-action@v1"
-    #   with:
-    #     tool: "taplo-cli"
+        tool: ${{ inputs.extra-tools != '' && format('cargo-make,cargo-nextest,{0}', inputs.extra-tools) || 'cargo-make,cargo-nextest' }}
