@@ -13,10 +13,34 @@ inputs:
 runs:
   using: "composite"
   steps:
-    # We tend to use stable Rust across Wack.
-    - name: "Install Rust (Stable)"
-      uses: dtolnay/rust-toolchain@stable
+    # Defer to the repo's pinned toolchain when one is present. If a repo
+    # pins a version via rust-toolchain.toml (or the legacy `rust-toolchain`
+    # file), we must install the components onto THAT channel — otherwise we
+    # install them onto `stable`, which is a different rustup toolchain than
+    # the pinned one that cargo actually uses. When that happened, tools like
+    # cargo-llvm-cov found `llvm-tools-preview` missing on the pinned
+    # toolchain and ran a slow, network-flaky `rustup component add` at build
+    # time (which timed out and broke CI). Falls back to `stable` when the
+    # repo pins nothing.
+    - name: "Resolve Rust toolchain"
+      id: toolchain
+      shell: bash
+      run: |
+        channel="stable"
+        if [[ -f rust-toolchain.toml ]]; then
+          parsed="$(grep -oE 'channel[[:space:]]*=[[:space:]]*"[^"]+"' rust-toolchain.toml | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')"
+          [[ -n "$parsed" ]] && channel="$parsed"
+        elif [[ -f rust-toolchain ]]; then
+          parsed="$(tr -d '[:space:]' < rust-toolchain)"
+          [[ -n "$parsed" ]] && channel="$parsed"
+        fi
+        echo "Resolved Rust toolchain channel: $channel"
+        echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+    - name: "Install Rust"
+      uses: dtolnay/rust-toolchain@master
       with:
+        toolchain: ${{ steps.toolchain.outputs.channel }}
         components: "rustfmt,clippy,llvm-tools-preview"
 
     # Restore the cache. A shared-key lets sibling jobs reuse artifacts;
