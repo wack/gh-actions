@@ -64,7 +64,12 @@ jobs:
       # the fully-qualified path.
       - name: "Setup Rust"
         uses: "wack/gh-actions/setup-rust@trunk"
-      
+        with:
+          # `cargo make ci-flow` runs the test suite with cargo-nextest and
+          # collects coverage with cargo-llvm-cov, so both must be installed
+          # alongside cargo-make (which setup-rust installs by default).
+          extra-tools: "cargo-nextest,cargo-llvm-cov"
+
       # This is the actual "validation" step.
       - name: "Cargo Make"
         run: cargo make ci-flow
