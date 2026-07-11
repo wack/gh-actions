@@ -58,10 +58,14 @@ compile it there.
    ```
 2. **Add this workflow** from here (installs into `.github/workflows/`):
    ```bash
-   gh aw add https://github.com/wack/gh-actions/blob/trunk/.github/workflows/multi-lens-review.md
+   gh aw add wack/gh-actions/.github/workflows/multi-lens-review.md@trunk
    # or, for guided setup that also helps wire secrets and open a PR:
    gh aw add-wizard
    ```
+   Both the `.md` extension and the `@trunk` ref are required: without `.md` the spec is
+   rejected, and without `@trunk` gh-aw defaults to a `main` ref that this repo doesn't have.
+   (The full blob URL — `https://github.com/wack/gh-actions/blob/trunk/.github/workflows/multi-lens-review.md`
+   — also works, but mind the long path if you copy it.)
 3. **Adapt the repo-specific bits** in the copied `multi-lens-review.md`:
    - the Linear team key / branch convention (`robbie/multi-…` → `MULTI-…`) if the repo maps
      to a different Linear team, and
