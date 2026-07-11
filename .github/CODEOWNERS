@@ -1,0 +1,12 @@
+# CODEOWNERS — Multi-Lens PR Review merge gate
+#
+# @felixbracken is the review bot and sole code owner. Branch protection on trunk
+# ("Require review from Code Owners") blocks merging until the multi-lens-review
+# workflow submits an APPROVE review as this account.
+#
+# Requirements for @felixbracken:
+#   (a) WRITE access to this repo (so its review satisfies the code-owner rule),
+#   (b) owns the REVIEW_BOT_TOKEN PAT the workflow uses to post the review, and
+#   (c) is NOT the account your agents use to open PRs — a code owner cannot approve
+#       their own PR, so a self-authored PR would never satisfy the gate.
+*       @felixbracken
