@@ -19,7 +19,10 @@ permissions:
   issues: read
 engine:
   id: claude
-  model: claude-sonnet-5   # pinned explicitly (passed through verbatim as ANTHROPIC_MODEL)
+  model: claude-sonnet-4-5   # set verbatim as ANTHROPIC_MODEL. Pinned to 4-5, not 5: the AWF
+                             # firewall (gh-aw v0.81.6 / firewall v0.27.11) has no AI-credit
+                             # pricing for claude-sonnet-5, so it 400s the agent. Bump to
+                             # claude-sonnet-5 once a firewall build prices it.
   env:
     # gh-aw has no native "xhigh" reasoning tier (its effort knob caps at "high" and is not
     # wired to the Claude engine). MAX_THINKING_TOKENS is Claude Code's native extended-thinking
@@ -166,7 +169,7 @@ Keep everything concise and evidence-first. Never echo the raw diff back to the 
 ## agent: `spec-compliance`
 ---
 description: Checks a PR against its Linear ticket spec; returns findings or PASS
-model: inherited   # inherit the parent engine's pinned claude-sonnet-5 + thinking budget
+model: inherited   # inherit the parent engine's pinned claude-sonnet-4-5 + thinking budget
 ---
 You are the **Spec Inspector** lens.
 
@@ -190,7 +193,7 @@ point. If the PR fully satisfies the spec, return exactly `PASS`. Never output t
 ## agent: `qa-edge-cases`
 ---
 description: Finds missed edge cases, weak tests, and fragile error handling; returns findings or PASS
-model: inherited   # inherit the parent engine's pinned claude-sonnet-5 + thinking budget
+model: inherited   # inherit the parent engine's pinned claude-sonnet-4-5 + thinking budget
 ---
 You are the **QA** lens.
 
@@ -209,7 +212,7 @@ are robust and no edge cases are missed, return exactly `PASS`. Never output the
 ## agent: `architecture-solid`
 ---
 description: Finds tight coupling, missing DI, and SOLID violations; returns findings or PASS
-model: inherited   # inherit the parent engine's pinned claude-sonnet-5 + thinking budget
+model: inherited   # inherit the parent engine's pinned claude-sonnet-4-5 + thinking budget
 ---
 You are the **Architecture** lens.
 
