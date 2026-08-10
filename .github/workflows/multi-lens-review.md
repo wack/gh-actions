@@ -17,17 +17,24 @@ permissions:
   contents: read
   pull-requests: read
   issues: read
+# Set verbatim as ANTHROPIC_MODEL, and inherited by the threat-detection job and, via
+# `model: inherit`, by all three lens sub-agents. Must be a model that is BOTH still served
+# by api.anthropic.com AND present in the AI-credit pricing table baked into the AWF image:
+# the api-proxy's budget guard is fail-closed and rejects an unpriceable model with a
+# pre-flight 400 rather than metering it as free. AWF gained claude-sonnet-5 pricing in
+# v0.27.27 and gh-aw v0.85.4 defaults to v0.27.44, so this needs no AWF version pin — and
+# pinning a newer AWF under an older gh-aw breaks the DIFC/CLI proxy handshake, so keep the
+# two in step by upgrading gh-aw rather than pinning AWF. Also avoid undated aliases that
+# Anthropic has retired (e.g. `claude-sonnet-4-5`): Claude Code silently migrates those to
+# its default claude-opus-5 and lands on whatever pricing that model has.
+model: claude-sonnet-5
 engine:
   id: claude
-  model: claude-sonnet-4-5   # set verbatim as ANTHROPIC_MODEL. Pinned to 4-5, not 5: the AWF
-                             # firewall (gh-aw v0.81.6 / firewall v0.27.11) has no AI-credit
-                             # pricing for claude-sonnet-5, so it 400s the agent. Bump to
-                             # claude-sonnet-5 once a firewall build prices it.
   env:
     # gh-aw has no native "xhigh" reasoning tier (its effort knob caps at "high" and is not
     # wired to the Claude engine). MAX_THINKING_TOKENS is Claude Code's native extended-thinking
     # budget; a high value approximates xhigh/max thinking. Applies to the orchestrator and, via
-    # `model: inherited`, to all three lens sub-agents.
+    # `model: inherit`, to all three lens sub-agents.
     MAX_THINKING_TOKENS: "31999"
 strict: true
 timeout-minutes: 20
@@ -101,7 +108,11 @@ safe-outputs:
     target: "*"
   submit-pull-request-review:
     max: 1
-    allowed-events: [APPROVE, REQUEST_CHANGES, COMMENT]
+    # APPROVE or REQUEST_CHANGES only. The review is a merge gate, so it has to resolve to
+    # a decision; COMMENT is deliberately withheld because it satisfies neither side of the
+    # gate and would leave the PR in limbo. Enforced here as well as in the prompt so a
+    # COMMENT verdict is rejected by the safe-output layer rather than silently posted.
+    allowed-events: [APPROVE, REQUEST_CHANGES]
     footer: if-body
     target: "*"
 ---
@@ -142,6 +153,27 @@ Combine the three reports into one deduplicated, filtered set of issues:
   no style nits already enforced by tooling, no speculative "could someday" concerns,
   no praise, no restating the diff.
 - Keep every surviving issue anchored to a concrete `path` + `line` from the diff.
+- **Classify each surviving issue as blocking or non-blocking.** This judgement is yours
+  alone — the lenses report problems, they do not decide the verdict, and a lens calling
+  something `high` severity does not by itself make it blocking. The axis is **not how
+  severe the finding is but how confident you are that applying it is a net improvement**:
+
+  - **Blocking** — you can say plainly that the change makes the code better. This covers
+    defects (incorrect behavior, an unmet requirement from the Linear spec, a crash or
+    data-loss path, a security hole, a silently-failing untested path) *and*, equally,
+    changes that clearly improve the code's **flexibility, testability, or readability**.
+    A refactor that inverts a hard dependency, makes an untestable unit testable, or
+    replaces something genuinely hard to follow is blocking. Being non-functional is not
+    a reason to wave it through.
+  - **Non-blocking** — the change is **arguable**: a competent engineer could reasonably
+    land on either side, either because the current code is defensible as written or
+    because the change buys one property at the cost of another (indirection for
+    flexibility, an abstraction for directness, coverage for maintenance burden). Matters
+    of taste with no clear winner belong here. Mark these `nit:`.
+
+  When a finding is hard to place, try to state in one sentence why the change is better,
+  with no "it depends" and no appeal to preference. If the sentence holds up, it is
+  blocking; if it needs a caveat to survive, it is a nit.
 
 ## Step 3 — Verdict (you MUST finish with exactly one submitted review)
 
@@ -150,26 +182,41 @@ Every review action must identify the PR: pass `pull_request_number` (the `numbe
 `submit_pull_request_review` call (and the repository `${{ github.repository }}` if the tool
 requires a `repo` argument).
 
-- **If any real issues remain**: post one `create_pull_request_review_comment` per issue
-  — anchored on its `path` + `line`, with a one-sentence problem statement followed by a
-  `<details>` block containing the concrete fix — then call `submit_pull_request_review`
-  with `event: "REQUEST_CHANGES"` and a short body that summarizes the blocking issues
-  grouped by lens (Spec / QA / Architecture). This leaves the merge gate unsatisfied.
-- **If all three lenses returned `PASS`** (no outstanding issues after synthesis): call
-  `submit_pull_request_review` with `event: "APPROVE"` and a one-line body stating the PR
-  satisfies its specification and is safe to merge. This approval (posted as the CODEOWNER
+Post one `create_pull_request_review_comment` per surviving issue, blocking or not —
+anchored on its `path` + `line`, with a one-sentence problem statement followed by a
+`<details>` block containing the concrete fix. Prefix each non-blocking one with
+`nit:` so the author can tell at a glance what does and does not stand in the way.
+Never exceed 15 inline comments; if more issues exist, keep every blocking one before any
+nit, and summarize the remainder in the review body. Dropping a blocking issue to make room
+for a nit would misstate the verdict.
+
+Then submit exactly one review, and **the event must be either `APPROVE` or
+`REQUEST_CHANGES`**. This review is a merge gate, so it has to resolve to a decision:
+
+- **`REQUEST_CHANGES` if one or more issues are blocking.** Body: a short summary of the
+  blocking issues grouped by lens (Spec / QA / Architecture). This leaves the gate unsatisfied.
+- **`APPROVE` otherwise** — including when non-blocking `nit:` comments remain. Body: one
+  line stating the PR satisfies its specification and is safe to merge, and, if you left
+  any nits, one clause noting they are non-blocking. This approval (posted as the CODEOWNER
   review bot) is what unblocks merge.
-- Use `event: "COMMENT"` only if the sole remaining findings are minor and non-blocking —
-  note that COMMENT does NOT satisfy the code-owner approval gate, so it will not unblock merge.
-- Never exceed 15 inline comments; if more issues exist, keep the highest-severity ones
-  and summarize the remainder in the review body.
+
+`COMMENT` is not available to you. Do not withhold a decision because the call is close or
+the evidence is mixed: settle each finding on whether the change is clearly an improvement,
+then let the blocking set decide the event, and say why in the body. Note the two kinds of
+uncertainty pull opposite ways — being unsure whether a change is *worth making* makes it a
+nit, but being unsure about *behavior* (a requirement you could not verify, a spec that
+would not load) is itself grounds for `REQUEST_CHANGES`. Neither is grounds for not deciding.
 
 Keep everything concise and evidence-first. Never echo the raw diff back to the PR.
 
 ## agent: `spec-compliance`
 ---
+# `name` is required by Claude Code — a file without it is silently not loaded as an agent.
+name: spec-compliance
 description: Checks a PR against its Linear ticket spec; returns findings or PASS
-model: inherited   # inherit the parent engine's pinned claude-sonnet-4-5 + thinking budget
+# `inherit` is Claude Code's spelling; gh-aw's documented "inherited" is not a valid value
+# there, and the extractor copies this frontmatter through verbatim.
+model: inherit
 ---
 You are the **Spec Inspector** lens.
 
@@ -192,8 +239,12 @@ point. If the PR fully satisfies the spec, return exactly `PASS`. Never output t
 
 ## agent: `qa-edge-cases`
 ---
+# `name` is required by Claude Code — a file without it is silently not loaded as an agent.
+name: qa-edge-cases
 description: Finds missed edge cases, weak tests, and fragile error handling; returns findings or PASS
-model: inherited   # inherit the parent engine's pinned claude-sonnet-4-5 + thinking budget
+# `inherit` is Claude Code's spelling; gh-aw's documented "inherited" is not a valid value
+# there, and the extractor copies this frontmatter through verbatim.
+model: inherit
 ---
 You are the **QA** lens.
 
@@ -211,8 +262,12 @@ are robust and no edge cases are missed, return exactly `PASS`. Never output the
 
 ## agent: `architecture-solid`
 ---
+# `name` is required by Claude Code — a file without it is silently not loaded as an agent.
+name: architecture-solid
 description: Finds tight coupling, missing DI, and SOLID violations; returns findings or PASS
-model: inherited   # inherit the parent engine's pinned claude-sonnet-4-5 + thinking budget
+# `inherit` is Claude Code's spelling; gh-aw's documented "inherited" is not a valid value
+# there, and the extractor copies this frontmatter through verbatim.
+model: inherit
 ---
 You are the **Architecture** lens.
 
