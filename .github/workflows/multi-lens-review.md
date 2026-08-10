@@ -55,16 +55,89 @@ pre-agent-steps:
       # PR comment that carried the /review slash command.
       PR_NUMBER: ${{ github.event.inputs.pr || github.event.issue.number || github.event.pull_request.number }}
       REPO: ${{ github.repository }}
+      # Consuming repos own their own noise policy — see .github/review-exclude below.
+      # The line budget is a backstop, not the mechanism; raise it per repo if needed.
+      MAX_DIFF_LINES: ${{ vars.REVIEW_DIFF_MAX_LINES || '20000' }}
     run: |
       set -euo pipefail
       mkdir -p /tmp/gh-aw/data
       printf '%s' "$PR_NUMBER" > /tmp/gh-aw/data/pr-number.txt
-      { gh pr diff "$PR_NUMBER" --repo "$REPO" || true; } \
-        | head -n 5000 > /tmp/gh-aw/data/pr-diff.patch
+      { gh pr diff "$PR_NUMBER" --repo "$REPO" || true; } > /tmp/gh-aw/data/pr-diff.raw
       gh pr view "$PR_NUMBER" --repo "$REPO" \
         --json number,title,body,headRefName,baseRefName,additions,deletions,changedFiles,files \
         > /tmp/gh-aw/data/pr-meta.json
-      echo "Pre-fetched PR #$PR_NUMBER diff ($(wc -l < /tmp/gh-aw/data/pr-diff.patch) lines) and metadata"
+      # Split the diff per file, drop files the consuming repo excludes, then fill the line
+      # budget a whole file at a time. Never `head -n` the raw patch: `gh pr diff` emits files
+      # in alphabetical order, so a generated file that sorts early (pnpm-lock.yaml, Cargo.lock)
+      # silently evicts every source file after it and the lenses review nothing that matters.
+      python3 - /tmp/gh-aw/data/pr-diff.raw /tmp/gh-aw/data/pr-diff.patch \
+               /tmp/gh-aw/data/diff-coverage.json .github/review-exclude "$MAX_DIFF_LINES" <<'PYEOF'
+      import json, os, re, sys
+      raw, out, cov, exclude_file, max_lines = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5])
+
+      def glob_to_re(p):
+          # gitignore-flavoured subset: ** spans separators, * and ? do not, a trailing
+          # slash means "everything under this directory".
+          if p.endswith('/'):
+              p += '**'
+          i, parts = 0, []
+          while i < len(p):
+              if p.startswith('**', i):
+                  parts.append('.*'); i += 2
+              elif p[i] == '*':
+                  parts.append('[^/]*'); i += 1
+              elif p[i] == '?':
+                  parts.append('[^/]'); i += 1
+              else:
+                  parts.append(re.escape(p[i])); i += 1
+          return '^' + ''.join(parts) + '$'
+
+      pats = []
+      if os.path.exists(exclude_file):
+          for line in open(exclude_file, encoding='utf-8', errors='replace'):
+              line = line.strip()
+              if not line or line.startswith('#'):
+                  continue
+              # `re:` passes the rest through as an unanchored regex; anything else is a glob.
+              pats.append(line[3:].strip() if line.startswith('re:') else glob_to_re(line))
+      rx = re.compile('|'.join(pats)) if pats else None
+
+      chunks, cur, path = [], None, None
+      for line in open(raw, encoding='utf-8', errors='replace'):
+          if line.startswith('diff --git '):
+              if cur is not None: chunks.append((path, cur))
+              m = re.match(r'diff --git a/(.*?) b/(.*)$', line.rstrip('\n'))
+              path = m.group(2) if m else '?'
+              cur = [line]
+          elif cur is not None:
+              cur.append(line)
+      if cur is not None: chunks.append((path, cur))
+
+      total = sum(len(c) for _, c in chunks)
+      excluded = [p for p, _ in chunks if rx and rx.search(p)]
+      kept = [(p, c) for p, c in chunks if not (rx and rx.search(p))]
+
+      # Greedy by design: skipping one oversized file to fit several small ones reviews more
+      # real code than stopping at the first overflow would.
+      body, omitted, written = [], [], 0
+      for p, c in kept:
+          if written + len(c) > max_lines:
+              omitted.append(p); continue
+          body.extend(c); written += len(c)
+
+      open(out, 'w', encoding='utf-8').write(''.join(body))
+      json.dump({
+          'total_diff_lines': total,
+          'reviewed_diff_lines': written,
+          'max_diff_lines': max_lines,
+          'excluded_by_policy': excluded,
+          'truncated': bool(omitted),
+          'omitted_files': omitted,
+      }, open(cov, 'w'), indent=2)
+      print(f"diff: {total} lines total, {written} reviewed, "
+            f"{len(excluded)} excluded by policy, truncated={bool(omitted)}")
+      PYEOF
+      echo "Pre-fetched PR #$PR_NUMBER diff and metadata"
   - name: Fetch this workflow's previous review
     env:
       GH_TOKEN: ${{ github.token }}
@@ -194,9 +267,21 @@ action requires one) wherever a review action needs to identify the PR.
 
 ## Pre-fetched inputs (read these files; do not re-fetch them)
 
+**Open every one of these with the `Read` tool, not with `cat` or any other Bash command.**
+Bash is confined to the repository working directory, so `cat` on a `/tmp/gh-aw/data/…`
+path fails with "Claude Code may only concatenate files from the allowed working
+directories"; the `Read` tool reaches these paths and works. The same applies to the lens
+sub-agents.
+
 - `/tmp/gh-aw/data/pr-meta.json` — PR number, title, body, changed files, and counts.
 - `/tmp/gh-aw/data/pr-diff.patch` — the unified diff. Use the `@@` hunk headers to derive
-  the exact `path` and `line` number for anchoring each inline comment (right side).
+  the exact `path` and `line` number for anchoring each inline comment (right side). This
+  is a *filtered* view of the PR, not the whole of it — see the next file.
+- `/tmp/gh-aw/data/diff-coverage.json` — what the patch above does and does not contain:
+  `total_diff_lines` vs `reviewed_diff_lines`, `excluded_by_policy` (files the repository
+  deliberately keeps out of review, via `.github/review-exclude`), `truncated`, and
+  `omitted_files` (changed files that did not fit the line budget). Read this **before**
+  delegating, and tell the lenses what is missing if anything is.
 - `/tmp/gh-aw/data/linear-spec.json` — the Linear ticket that specifies the intended
   behavior (`title`, `description`, `url`). If its `found` field is `false`, the spec could
   not be loaded — treat that as a review finding, not a pass.
@@ -297,6 +382,12 @@ Then submit exactly one review, and **the event must be either `APPROVE` or
   line stating the PR satisfies its specification and is safe to merge, and, if you left
   any nits, one clause noting they are non-blocking. This approval (posted as the CODEOWNER
   review bot) is what unblocks merge.
+- **You may not `APPROVE` when `diff-coverage.json` has `truncated: true`.** Some changed
+  file was never shown to you, so "safe to merge" is a claim you cannot make. Submit
+  `REQUEST_CHANGES` and name the files in `omitted_files` as unreviewed, even when nothing
+  else is blocking. Files in `excluded_by_policy` are a different case — the repository
+  chose to keep those out of review, so they are not a gap and not a finding; just do not
+  claim to have reviewed them.
 
 `COMMENT` is not available to you. Do not withhold a decision because the call is close or
 the evidence is mixed: settle each finding on whether the change is clearly an improvement,
@@ -318,7 +409,8 @@ model: inherit
 ---
 You are the **Spec Inspector** lens.
 
-Read the specification from `/tmp/gh-aw/data/linear-spec.json` (fields: `title`,
+Read the specification from `/tmp/gh-aw/data/linear-spec.json` with the `Read` tool (Bash is
+confined to the repo directory and cannot open it) — fields: `title`,
 `description`, `url`; a `found: false` value means it could not be loaded) and the change
 set from `/tmp/gh-aw/data/pr-diff.patch` and `/tmp/gh-aw/data/pr-meta.json`.
 
@@ -346,7 +438,8 @@ model: inherit
 ---
 You are the **QA** lens.
 
-Read `/tmp/gh-aw/data/pr-diff.patch` and `/tmp/gh-aw/data/pr-meta.json`.
+Read `/tmp/gh-aw/data/pr-diff.patch` and `/tmp/gh-aw/data/pr-meta.json` with the `Read`
+tool; Bash is confined to the repo directory and cannot open them.
 
 Look only for:
 
@@ -369,7 +462,8 @@ model: inherit
 ---
 You are the **Architecture** lens.
 
-Read `/tmp/gh-aw/data/pr-diff.patch` and `/tmp/gh-aw/data/pr-meta.json`.
+Read `/tmp/gh-aw/data/pr-diff.patch` and `/tmp/gh-aw/data/pr-meta.json` with the `Read`
+tool; Bash is confined to the repo directory and cannot open them.
 
 Flag only genuine architecture problems in the *changed* code:
 
