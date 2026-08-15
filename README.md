@@ -58,10 +58,14 @@ compile it there.
    ```
 2. **Add this workflow** from here (installs into `.github/workflows/`):
    ```bash
-   gh aw add https://github.com/wack/gh-actions/blob/trunk/.github/workflows/multi-lens-review.md
+   gh aw add wack/gh-actions/.github/workflows/multi-lens-review.md@trunk
    # or, for guided setup that also helps wire secrets and open a PR:
    gh aw add-wizard
    ```
+   Both the `.md` extension and the `@trunk` ref are required: without `.md` the spec is
+   rejected, and without `@trunk` gh-aw defaults to a `main` ref that this repo doesn't have.
+   (The full blob URL — `https://github.com/wack/gh-actions/blob/trunk/.github/workflows/multi-lens-review.md`
+   — also works, but mind the long path if you copy it.)
 3. **Adapt the repo-specific bits** in the copied `multi-lens-review.md`:
    - the Linear team key / branch convention (`robbie/multi-…` → `MULTI-…`) if the repo maps
      to a different Linear team, and
@@ -73,7 +77,12 @@ compile it there.
 5. **Add the secrets** (`gh secret set <NAME>`, or Settings → Secrets → Actions):
    - `ANTHROPIC_API_KEY` — Claude engine (the workflow pins `claude-sonnet-5`)
    - `LINEAR_API_KEY` — Linear personal API key (the Spec lens's source)
-   - `REVIEW_BOT_TOKEN` — the review bot's fine-grained PAT (repo-scoped, Pull requests: Read & write)
+   - `REVIEW_BOT_TOKEN` — the review bot's PAT, used both to post the review and, on `/review`,
+     to run the actor-permission check and check out the PR head. Fine-grained scopes:
+     **Contents: Read**, **Pull requests: Read & write**, and **Organization → Members: Read**
+     (classic PAT equivalent: `repo` + `read:org`). The bot account must also be a **member of
+     the org**. Without org-member read, `/review` 404s for reviewers whose write access comes
+     from a team rather than a direct collaborator grant.
 6. **Set up the merge gate** so only a clean review unblocks merging:
    - add `.github/CODEOWNERS` with `*  @<review-bot>` — the bot must have **write** access and
      must **not** be the account that authors the PRs it reviews;
